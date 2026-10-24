@@ -22,8 +22,27 @@ export async function loginPatient(page, { username = 'admin', password = 'admin
   await typeInto(page, inputs.nth(1), password);
   // 验证码已由 screenshot profile 关闭，仍留一个字符以防前端校验
   await typeInto(page, inputs.nth(2), '0');
-  await page.locator('.wd-button.is-primary').click();
-  await page.waitForFunction(() => !location.hash.includes('/pages/login/index'), null, { timeout: 20000 });
+  await submitLogin(page);
+}
+
+/**
+ * 提交登录并等离开登录页。
+ *
+ * 录屏（recordVideo）时页面更慢，首帧未 hydrate 完就点会「点了没反应」，
+ * 所以最多点两次：第一次点完等 4s，仍停在登录页再点一次，最后统一等 25s。
+ */
+async function submitLogin(page) {
+  const btn = page.locator('.wd-button.is-primary');
+  for (let i = 0; i < 2; i += 1) {
+    await btn.waitFor({ state: 'visible' });
+    await btn.click();
+    try {
+      await page.waitForFunction(() => !location.hash.includes('/pages/login/index'), null, { timeout: 4000 });
+      return;
+    } catch {
+      if (i === 1) throw new Error('登录未成功：仍停留在登录页（检查后端 screenshot profile 与代理目标）');
+    }
+  }
 }
 
 /** H5 分诊登录：先清登录态再登分诊账号 */
@@ -38,7 +57,7 @@ export async function loginTriage(page) {
   await typeInto(page, inputs.nth(2), '0');
   await page.locator('.wd-button.is-primary').click();
   // 分诊账号登录后 reLaunch 到分诊签到页
-  await page.waitForFunction(() => location.hash.includes('/pages/triage/'), null, { timeout: 20000 });
+  await page.waitForFunction(() => location.hash.includes('/pages/triage/'), null, { timeout: 25000 });
 }
 
 /** 后台登录，成功后进入工作台 */

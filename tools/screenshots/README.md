@@ -23,7 +23,7 @@ pnpm install --ignore-scripts           # 浏览器不重复下载
 export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 node run.mjs --shots                    # 10 张单页静帧
 node run.mjs --only=h5-home,admin-dashboard
-node run.mjs --all                      # 未来启用流程与 GIF
+node gif.mjs                            # 录患者下单路径 → assets/demo.gif（14s / 5MB）
 node probe.mjs all                      # 诊断：打印登录页真实控件结构
 node probe-home.mjs                     # 诊断：首页是否落兜底页、网络请求明细
 ```
@@ -41,6 +41,15 @@ WSL 自带环境缺两样东西，脚本用「私有副本」解决，不动系�
 
 浏览器二进制直接复用 `~/.cache/ms-playwright/chromium-*/`（目录名随版本变，两种布局都探），
 避免「Playwright 版本 ↔ 浏览器 revision」不匹配时重复下载。
+
+## GIF 为什么不走 ffmpeg 一步到位
+
+Playwright 自带的 ffmpeg 是**精简构建**：`-muxers` 里没有 `gif`，`-filters` 里也没有
+`palettegen/paletteuse`，且 `fps` 滤镜初始化会失败（用 `-r` 代替）。所以 `lib/gif.mjs` 的做法是：
+
+1. `ffmpeg -i demo.webm -r 12 -vf scale=540:-2 frames/%04d.png`（image2 导出，精简构建支持）
+2. `fast-png` 解码每帧 → `gifenc` 逐帧量化（256 色）→ 写帧
+3. 编码前自动裁掉开头的纯白帧（录像一建立就开始录，页面还在加载）
 
 ## 已知约束
 

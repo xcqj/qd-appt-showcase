@@ -38,6 +38,13 @@ graph LR
 
 更多：`assets/screenshots/`（患者 5 张 / 分诊 2 张 / 后台 3 张）。重出方式见 `tools/screenshots/README.md`。
 
+### 主流程（15 秒，脚本录制）
+
+![患者下单路径](assets/demo.gif)
+
+首页 → 选院区 → 科室 → 医生 → 排班 → 选时间，全程真实点击，末尾停在「下一步」前（**不提交订单**，
+避免占用「同一就诊人同一就诊日 1 单」的演示额度）。
+
 ## 快速开始
 
 前置：JDK 21、Node ≥ 20、MySQL 8、Redis 7（或用 `backend/deploy/docker-compose.yml` 起依赖）。
@@ -113,7 +120,7 @@ cd qd-appt-app && pnpm install && pnpm dev:h5
 cd tools/screenshots
 pnpm install                     # 首次：PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 node run.mjs --shots             # 10 张单页截图
-node run.mjs --all               # 含流程与 GIF（需三端在跑）
+node gif.mjs                     # 录制并生成 assets/demo.gif（约 30 秒）
 ```
 
 脚本纪律（禁 `sleep`、固定视口、产物阈值）见本仓 `AGENTS.md` §2–§3。
