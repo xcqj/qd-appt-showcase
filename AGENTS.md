@@ -10,7 +10,8 @@
 - `assets/screenshots/*.png`：**脚本产出**的关键页截图，不允许手工截图。
 - `assets/demo.gif`：脚本录制的 15 秒主流程。
 - `tools/screenshots/`：Playwright 脚本（自带 `package.json`，不污染其它四个仓的依赖树）。
-- 后续 S14 的 `demo.sh`、`docker-compose.yml` 也落这里。
+- `demo.sh` + `deploy/docker-compose.yml`（S14）：一键起全栈的入口。依赖定义 `include` 自 `../backend/deploy`，
+  本仓只补 api/admin/h5 三个服务；运行时数据落 `data/`（已忽略），端口与镜像 tag 走 `deploy/.env`。
 
 ## 2. 截图脚本纪律（硬约束）
 
@@ -48,6 +49,13 @@
 
 ```bash
 cd tools/screenshots && node run.mjs --all     # 产物齐全且可重复执行
+```
+
+一键演示（S14，静态检查，不起容器）：
+
+```bash
+cd showcase
+bash -n demo.sh && docker compose -f deploy/docker-compose.yml config >/dev/null
 ```
 
 提交前自查：`git status --short` 无 `node_modules`、`.out`、`*.webm`；产物阈值达标；README 引用的图片文件都存在。

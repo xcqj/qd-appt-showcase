@@ -47,20 +47,32 @@ graph LR
 
 ## 快速开始
 
-前置：JDK 21、Node ≥ 20、MySQL 8、Redis 7（或用 `backend/deploy/docker-compose.yml` 起依赖）。
+前置：**只装 Docker**（含 compose ≥2.20）。五个仓同级 clone：
 
 ```bash
-# 1) 后端（8082）
-cd qd-appt-backend && ./mvnw -pl ruoyi-admin -am compile -DskipTests && <你的启动方式>
-
-# 2) 管理端（8083）
-cd qd-appt-admin && pnpm install && pnpm dev
-
-# 3) 患者端 H5（8084）
-cd qd-appt-app && pnpm install && pnpm dev:h5
+mkdir -p qd-appt && cd qd-appt
+for r in backend admin app docs showcase; do git clone git@github.com:xcqj/qd-appt-$r.git; done
+cd showcase && ./demo.sh
 ```
 
-数据库初始化脚本、seed 数据与完整启动说明见 [`qd-appt-docs`](https://github.com/xcqj/qd-appt-docs) 仓的 `README.md`。
+脚本依次做七件事：检查 Docker / 端口 → 拉取或本地构建三镜像 → 起 MySQL / Redis / MinIO → 建库并导入演示数据
+→ 建 MinIO bucket → 起后端 / 后台 / H5 → 逐端探活。就绪后打印三个地址与账号：
+
+| 入口 | 地址 | 账号 |
+|---|---|---|
+| 患者端 H5 | `http://localhost:8084` | `admin / admin123` |
+| 分诊台（同一 H5） | 同上，登录 `appt_triage / admin123` | `appt_triage / admin123` |
+| 管理后台 | `http://localhost:8083` | `admin / admin123` |
+| 后端 OpenAPI | `http://localhost:8082/v3/api-docs` | — |
+| SnailJob 控制台 | `http://localhost:18800/snail-job` | `admin / admin` |
+
+首次约 2–8 分钟（取决于是否命中镜像缓存），复跑约 1 分钟。常用子命令：`./demo.sh down`（停止，保留数据）、
+`./demo.sh reset`（清数据卷）、`./demo.sh logs`。
+
+**端口不用手填**：默认 `8082/8083/8084`；若被别的进程占用（例如本机开发环境），脚本按 `+10000` 自动换到空闲端口
+（如 `18082`）并打印实际地址。想固定下来，把端口写进 `showcase/deploy/.env`（模板见 `.env.example`）。
+
+不想用 Docker 时，手工启动（JDK 21 + Node ≥ 20）见 [`qd-appt-docs`](https://github.com/xcqj/qd-appt-docs) 的「启动与演示」。
 
 ## 演示账号
 

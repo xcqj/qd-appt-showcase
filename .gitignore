@@ -4,6 +4,10 @@ tools/screenshots/.out/
 tools/screenshots/**/*.webm
 tools/screenshots/**/.tmp/
 
+# demo 运行产物（S14）：演示数据卷与本地 .env
+data/
+deploy/.env
+
 # 系统与编辑器
 .DS_Store
 Thumbs.db
