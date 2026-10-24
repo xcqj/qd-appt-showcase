@@ -60,7 +60,7 @@ cd qd-appt-admin && pnpm install && pnpm dev
 cd qd-appt-app && pnpm install && pnpm dev:h5
 ```
 
-数据库初始化脚本、seed 数据与完整启动说明见 [`qd-appt-docs`](../qd-appt-docs) 仓的 `README.md`。
+数据库初始化脚本、seed 数据与完整启动说明见 [`qd-appt-docs`](https://github.com/xcqj/qd-appt-docs) 仓的 `README.md`。
 
 ## 演示账号
 
@@ -70,7 +70,7 @@ cd qd-appt-app && pnpm install && pnpm dev:h5
 | 分诊 | `appt_triage` | `admin123` |
 | 管理端 | `admin` | `admin123` |
 
-5 分钟怎么讲、每步点哪里、卡点怎么办：见 [`docs/DEMO.md`](../qd-appt-docs/blob/main/DEMO.md)。
+5 分钟怎么讲、每步点哪里、卡点怎么办：见 [`docs/DEMO.md`](https://github.com/xcqj/qd-appt-docs/blob/main/DEMO.md)。
 
 ## 接口文档
 
@@ -83,12 +83,12 @@ cd qd-appt-app && pnpm install && pnpm dev:h5
 
 | 决策 | 一句话 | 详情 |
 |---|---|---|
-| 限购口径 | 同一就诊人同一就诊日 1 单，跨院区共享 | [ADR-0001](../qd-appt-docs/blob/main/adr/ADR-0001-purchase-limit-scope.md) |
-| 停诊两段式 | 登记不动号源，处理才回池退款 | [ADR-0002](../qd-appt-docs/blob/main/adr/ADR-0002-suspend-two-phase-and-batch-idempotency.md) |
-| 号源不物理删除 | `active_flag` + 有效行唯一索引 | [ADR-0003](../qd-appt-docs/blob/main/adr/ADR-0003-active-flag-and-unique-index.md) |
-| 停诊范围复合键 | `scope_type + scope_value`，Service 集中构造 | [ADR-0004](../qd-appt-docs/blob/main/adr/ADR-0004-scope-value-composite-key.md) |
-| 时刻口径 | 后端统一 `HH:mm`，前端不再截断 | [ADR-0005](../qd-appt-docs/blob/main/adr/ADR-0005-time-point-format.md) |
-| 三层防线 | Redis 预扣 / DB 单柱 CAS / 应用重试 | [ADR-0006](../qd-appt-docs/blob/main/adr/ADR-0006-three-layer-defense.md) |
+| 限购口径 | 同一就诊人同一就诊日 1 单，跨院区共享 | [ADR-0001](https://github.com/xcqj/qd-appt-docs/blob/main/adr/ADR-0001-purchase-limit-scope.md) |
+| 停诊两段式 | 登记不动号源，处理才回池退款 | [ADR-0002](https://github.com/xcqj/qd-appt-docs/blob/main/adr/ADR-0002-suspend-two-phase-and-batch-idempotency.md) |
+| 号源不物理删除 | `active_flag` + 有效行唯一索引 | [ADR-0003](https://github.com/xcqj/qd-appt-docs/blob/main/adr/ADR-0003-active-flag-and-unique-index.md) |
+| 停诊范围复合键 | `scope_type + scope_value`，Service 集中构造 | [ADR-0004](https://github.com/xcqj/qd-appt-docs/blob/main/adr/ADR-0004-scope-value-composite-key.md) |
+| 时刻口径 | 后端统一 `HH:mm`，前端不再截断 | [ADR-0005](https://github.com/xcqj/qd-appt-docs/blob/main/adr/ADR-0005-time-point-format.md) |
+| 三层防线 | Redis 预扣 / DB 单柱 CAS / 应用重试 | [ADR-0006](https://github.com/xcqj/qd-appt-docs/blob/main/adr/ADR-0006-three-layer-defense.md) |
 
 **并发与缓存的实际数据不写在这里**（避免文档双权威）：见 `qd-appt-docs` 的 `test-evidence.md` §2（主链路）、
 §3（摘除防线的对照实验）、§7.2（延迟分位）。
