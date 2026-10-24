@@ -1,0 +1,12 @@
+# 依赖与工具产物
+node_modules/
+tools/screenshots/.out/
+tools/screenshots/**/*.webm
+tools/screenshots/**/.tmp/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
