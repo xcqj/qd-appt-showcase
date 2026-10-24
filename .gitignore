@@ -10,3 +10,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+
+# 免 root 下载的浏览器依赖库（apt-get download + dpkg -x 产物，本机生成，不入库）
+tools/screenshots/.libs/
