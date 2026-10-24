@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-export const OUT_DIR = join(HERE, '../../assets/screenshots');
+export const OUT_DIR = join(HERE, '../../../assets/screenshots');
 
 const HYGIENE_CSS = `
   ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }

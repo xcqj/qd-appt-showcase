@@ -18,12 +18,26 @@ const only = onlyArg ? onlyArg.slice('--only='.length).split(',') : null;
 const runAll = args.includes('--all');
 
 const SHOTS = {
-  'h5-home': { kind: 'h5', role: 'patient', path: '/pages/index/index', wait: '.home__campus, .home__grid' },
-  'h5-campus': { kind: 'h5', role: 'patient', path: '/pages/campus/index', wait: '.campus__card' },
-  'admin-dashboard': { kind: 'admin', role: 'admin', path: '/index', wait: '.board__metric, .el-card' },
-  'admin-registration': { kind: 'admin', role: 'admin', path: '/appt/registration', wait: '.el-table' },
-  'admin-suspend': { kind: 'admin', role: 'admin', path: '/appt/suspend', wait: '.el-table' },
+  // 等待条件优先用「页面上一定会出现的文案」，比类名稳（类名会随样式重构变）
+  'h5-home': { kind: 'h5', role: 'patient', path: '/pages/index/index', text: '选择就诊院区' },
+  'h5-campus': { kind: 'h5', role: 'patient', path: '/pages/campus/index', text: '选择就诊院区' },
+  'h5-dept': { kind: 'h5', role: 'patient', path: '/pages/dept/index', text: '去选择院区' },
+  'h5-registration-list': { kind: 'h5', role: 'patient', path: '/pages/registration/index', selector: '.record__body' },
+  'h5-notice': { kind: 'h5', role: 'patient', path: '/pages/notice/index', selector: '.notice__tab' },
+  'triage-sign': { kind: 'h5', role: 'triage', path: '/pages/triage/sign/index', text: '分诊签到' },
+  'triage-list': { kind: 'h5', role: 'triage', path: '/pages/triage/list', selector: '.appt-content' },
+  'admin-dashboard': { kind: 'admin', role: 'admin', text: '今日预约' },
+  'admin-registration': { kind: 'admin', role: 'admin', parents: ['挂号业务', '预约管理'], menu: '挂号单', selector: '.el-table' },
+  'admin-suspend': { kind: 'admin', role: 'admin', parents: ['挂号业务'], menu: '停诊登记', selector: '.el-table' },
 };
+
+async function waitReady(page, cfg) {
+  if (cfg.selector) {
+    await page.waitForSelector(cfg.selector, { timeout: 20000 });
+    return;
+  }
+  await page.getByText(cfg.text, { exact: false }).first().waitFor({ state: 'visible', timeout: 20000 });
+}
 
 function picked(name) {
   return !only || only.includes(name);
@@ -47,7 +61,7 @@ async function main() {
     for (const [name, cfg] of Object.entries(SHOTS)) {
       if (cfg.role !== 'patient' || !picked(name)) continue;
       await page.goto(`${URLS.h5}/#${cfg.path}`, { waitUntil: 'domcontentloaded' });
-      await page.waitForSelector(cfg.wait, { timeout: 20000 });
+      await waitReady(page, cfg);
       await shoot(page, name, { kind: 'h5' });
     }
     await ctx.close();
@@ -61,7 +75,7 @@ async function main() {
     for (const [name, cfg] of Object.entries(SHOTS)) {
       if (cfg.role !== 'triage' || !picked(name)) continue;
       await page.goto(`${URLS.h5}/#${cfg.path}`, { waitUntil: 'domcontentloaded' });
-      await page.waitForSelector(cfg.wait, { timeout: 20000 });
+      await waitReady(page, cfg);
       await shoot(page, name, { kind: 'h5' });
     }
     await ctx.close();
@@ -74,8 +88,23 @@ async function main() {
     await loginAdmin(page);
     for (const [name, cfg] of Object.entries(SHOTS)) {
       if (cfg.role !== 'admin' || !picked(name)) continue;
-      await page.goto(`${URLS.admin}${cfg.path}`, { waitUntil: 'domcontentloaded' });
-      await page.waitForSelector(cfg.wait, { timeout: 20000 });
+      if (cfg.menu) {
+        // 用 DOM click 导航：Element 折叠子菜单里的项 Playwright 判定「不可见」，但 DOM 上可点，
+        // 且整页 goto 会丢登录态（后台 token 不在持久存储里）
+        await page.evaluate((titles) => {
+          for (const t of titles) {
+            const sub = [...document.querySelectorAll('.el-sub-menu__title')].find((e) => e.innerText.trim() === t);
+            sub?.click();
+          }
+        }, cfg.parents ?? []);
+        await page.waitForTimeout(400);
+        await page.evaluate((menu) => {
+          const item = [...document.querySelectorAll('.el-menu-item')].find((e) => e.innerText.trim() === menu);
+          item?.click();
+        }, cfg.menu);
+        await page.waitForTimeout(700);
+      }
+      await waitReady(page, cfg);
       await shoot(page, name, { kind: 'admin' });
     }
     await ctx.close();

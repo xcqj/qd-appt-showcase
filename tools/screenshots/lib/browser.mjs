@@ -46,16 +46,26 @@ export function chromiumPath() {
   return hit;
 }
 
-/** 私有依赖库目录（.libs/root/usr/lib/x86_64-linux-gnu），有就挂上，无就按系统库来 */
-function withLocalLibs() {
+/**
+ * 私有运行环境（全部免 root，只是本机生成、不入库）：
+ * - `.libs/root/usr/lib/x86_64-linux-gnu`：libnspr4 / libnss3 / libasound2（`apt-get download` + `dpkg -x`）
+ * - `.libs/fonts` + `.libs/fonts.conf`：文泉驿正黑，缺失时中文会渲染成方块（tofu）
+ */
+function withLocalEnv() {
   const libDir = join(TOOL_ROOT, '.libs/root/usr/lib/x86_64-linux-gnu');
-  if (!existsSync(libDir)) return;
-  const prev = process.env.LD_LIBRARY_PATH;
-  process.env.LD_LIBRARY_PATH = prev ? `${libDir}:${prev}` : libDir;
+  if (existsSync(libDir)) {
+    const prev = process.env.LD_LIBRARY_PATH;
+    process.env.LD_LIBRARY_PATH = prev ? `${libDir}:${prev}` : libDir;
+  }
+
+  const fontConf = join(TOOL_ROOT, '.libs/fonts.conf');
+  if (existsSync(fontConf)) {
+    process.env.FONTCONFIG_FILE = fontConf;
+  }
 }
 
 export async function launch() {
-  withLocalLibs();
+  withLocalEnv();
   return chromium.launch({
     executablePath: chromiumPath(),
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
