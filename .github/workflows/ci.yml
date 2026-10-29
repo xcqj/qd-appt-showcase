@@ -1,0 +1,95 @@
+# 号源 QueueDepth · 门面/编排仓 CI（S16.1 补）
+#
+# 本仓不放业务代码，但放着**整个部署链路**（5 份 compose + deploy.sh + demo.sh）。
+# 没有门禁时，改错一行只能等 dispatch 部署时才炸——那时线上已经被重建过一次。
+#
+# 只做「静态可验证」的检查，不起容器、不连网：
+#   ① 脚本语法（bash -n）
+#   ② 三种组合都能渲染（docker compose config）
+#   ③ **不变式**：部署链路里不允许出现 build:（部署机不 clone 源码），demo 链路必须有 4 个
+#   ④ release.yml 能被 YAML 解析（坏掉的 workflow 只会在 Actions 里静默不出现）
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static-check:
+    name: 脚本与编排静态检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 脚本语法
+        run: |
+          set -euo pipefail
+          bash -n demo.sh
+          bash -n deploy/deploy.sh
+          echo "bash -n 通过"
+
+      - name: 三组合都能渲染
+        env:
+          APPT_TAG: v0.1.0
+        run: |
+          set -euo pipefail
+          base=deploy/compose.yml
+          deps=deploy/compose.deps.yml
+          docker compose -f "$base" -f "$deps" -f deploy/compose.wsl.yml   config >/dev/null
+          docker compose -f "$base" -f "$deps" -f deploy/compose.cloud.yml config >/dev/null
+          docker compose -f "$base" -f "$deps" -f deploy/compose.wsl.yml -f deploy/compose.build.yml config >/dev/null
+          echo "三种组合渲染通过"
+
+      # 这条是 S16.1 的核心契约：镜像只能从 GHCR 拉，部署机上不许有源码构建。
+      # 有人哪天把 build: 加回 compose.yml 或 wsl/cloud 覆盖里，这里会立刻红。
+      - name: 不变式（部署无 build / demo 有 4 个）
+        env:
+          APPT_TAG: v0.1.0
+        run: |
+          set -euo pipefail
+          base=deploy/compose.yml
+          deps=deploy/compose.deps.yml
+          for target in wsl cloud; do
+            n=$(docker compose -f "$base" -f "$deps" -f "deploy/compose.$target.yml" config | grep -c 'build:' || true)
+            if [ "$n" != "0" ]; then
+              echo "::error::$target 配置里出现 $n 处 build:；部署机不 clone 源码，必须为 0"
+              exit 1
+            fi
+          done
+          n=$(docker compose -f "$base" -f "$deps" -f deploy/compose.wsl.yml -f deploy/compose.build.yml config | grep -c 'build:' || true)
+          if [ "$n" != "4" ]; then
+            echo "::error::demo 组合应有 4 处 build:（api/snailjob/admin/h5），实际 $n"
+            exit 1
+          fi
+          # 只看非注释行：deploy.sh 头部注释里会提到 compose.build.yml（说明"不带它"），那是文字不是用法
+          if grep -vE '^[[:space:]]*#' deploy/deploy.sh | grep -q 'compose\.build\.yml'; then
+            echo "::error::deploy.sh 在代码里引用了 compose.build.yml；部署链路必须永远不带本地构建"
+            exit 1
+          fi
+          grep -q 'COMPOSE_BUILD' demo.sh || {
+            echo "::error::demo.sh 应引用 compose.build.yml（本地从源码构建）"
+            exit 1
+          }
+          echo "不变式通过"
+
+      - name: release.yml 可解析
+        run: |
+          set -euo pipefail
+          python3 -c "import yaml" 2>/dev/null || pip install --quiet pyyaml
+          python3 - <<'PY'
+          import yaml, sys
+          with open('.github/workflows/release.yml') as f:
+              d = yaml.safe_load(f)
+          jobs = list(d.get('jobs', {}))
+          assert 'preflight' in jobs and 'deploy-wsl' in jobs, f"release.yml jobs 异常：{jobs}"
+          print("release.yml 解析通过，jobs =", jobs)
+          PY
