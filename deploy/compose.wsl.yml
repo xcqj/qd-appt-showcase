@@ -32,7 +32,9 @@ services:
 
   redis:
     ports:
-      - "127.0.0.1:${APPT_REDIS_PUBLISH_PORT:-6380}:6379"
+      # 默认 16380 而不是 6380：开发态的 qd-appt-redis 长期占着 6380，
+      # 演示栈若也用 6380 会在重建时撞「port is already allocated」（2026-10-30 实测）
+      - "127.0.0.1:${APPT_REDIS_PUBLISH_PORT:-16380}:6379"
 
   minio:
     ports:

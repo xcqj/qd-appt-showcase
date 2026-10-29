@@ -10,6 +10,7 @@
 #
 # 用法：
 #   ./deploy.sh <wsl|cloud> up --tag v0.1.0 [--no-pull]
+#   ./deploy.sh <wsl|cloud> adopt --tag latest  # 首次：把已在跑的栈接管为 current（回滚落点）
 #   ./deploy.sh <wsl|cloud> rollback            # 回到 .state/previous
 #   ./deploy.sh <wsl|cloud> status              # 容器状态 + 当前/上一版本 + 业务探活
 #   ./deploy.sh <wsl|cloud> backup [--keep N]   # mysqldump + MinIO 打包
@@ -240,7 +241,9 @@ cmd_up() {
 
 cmd_rollback() {
   local tag; tag="$(state_tag "$PREVIOUS")"
-  require_tag "$tag"
+  # 注意：这里**不**套 require_tag —— 回滚必须能回到"当时真的在跑的那一版"，
+  # 包括首次发布前接管的 latest。
+  [ -n "$tag" ] || die "没有 .state/previous，无法回滚（首次发布前先用 adopt 接管现有栈）"
 
   say "== 回滚到 $tag（$TARGET）=="
   export APPT_TAG="$tag"
@@ -253,6 +256,17 @@ cmd_rollback() {
   write_state "$CURRENT" "$tag"
   if [ -n "$old_current" ]; then write_state "$PREVIOUS" "$old_current"; fi
   ok "已回滚到 $tag（可用 --tag $old_current 前滚回去）"
+}
+
+cmd_adopt() { # 把"当前正在跑的一版"登记为 current，作为首次发布的回滚落点
+  local tag="${TAG_ARG:-}"
+  [ -n "$tag" ] || die "adopt 需要 --tag <当前线上版本>（例如 latest）"
+  if [ -f "$CURRENT" ]; then
+    die ".state/current 已存在（$(state_tag "$CURRENT")），无需 adopt"
+  fi
+  write_state "$CURRENT" "$tag"
+  ok "已接管现有部署：current = $tag"
+  warn "第一次 up 会把它记为 previous，从此回滚才有落点"
 }
 
 cmd_status() {
@@ -328,6 +342,7 @@ cmd_logs() { "${COMPOSE[@]}" logs -f --tail=100; }
 
 case "$CMD" in
   up)       cmd_up ;;
+  adopt)    cmd_adopt ;;
   rollback) cmd_rollback ;;
   status)   cmd_status ;;
   backup)   cmd_backup ;;
