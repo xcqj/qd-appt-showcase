@@ -55,22 +55,41 @@ for r in backend admin app docs showcase; do git clone git@github.com:xcqj/qd-ap
 cd showcase && ./demo.sh
 ```
 
-脚本依次做七件事：检查 Docker / 端口 → 拉取或本地构建三镜像 → 起 MySQL / Redis / MinIO → 建库并导入演示数据
+脚本依次做七件事：检查 Docker / 端口 → 拉取或本地构建四镜像 → 起 MySQL / Redis / MinIO → 建库并导入演示数据
 → 建 MinIO bucket → 起后端 / 后台 / H5 → 逐端探活。就绪后打印三个地址与账号：
 
 | 入口 | 地址 | 账号 |
 |---|---|---|
-| 患者端 H5 | `http://localhost:8084` | `admin / admin123` |
+| 患者端 H5 | `http://localhost:18084` | `admin / admin123` |
 | 分诊台（同一 H5） | 同上，登录 `appt_triage / admin123` | `appt_triage / admin123` |
-| 管理后台 | `http://localhost:8083` | `admin / admin123` |
-| 后端 OpenAPI | `http://localhost:8082/v3/api-docs` | — |
+| 管理后台 | `http://localhost:18083` | `admin / admin123` |
+| 后端 OpenAPI | `http://localhost:18082/v3/api-docs` | — |
 | SnailJob 控制台 | `http://localhost:18800/snail-job` | `admin / admin` |
 
 首次约 2–8 分钟（取决于是否命中镜像缓存），复跑约 1 分钟。常用子命令：`./demo.sh down`（停止，保留数据）、
 `./demo.sh reset`（清数据卷）、`./demo.sh logs`。
 
-**端口不用手填**：默认 `8082/8083/8084`；若被别的进程占用（例如本机开发环境），脚本按 `+10000` 自动换到空闲端口
-（如 `18082`）并打印实际地址。想固定下来，把端口写进 `showcase/deploy/.env`（模板见 `.env.example`）。
+**端口约定**：演示态固定 `18082 / 18083 / 18084`，与开发态的 `8082 / 8083 / 8084` 永不重叠（同一个端口被开发服务器占着时，
+隧道就会指向热更新服务而不是构建产物）。若 18xxx 也被占用，脚本按 `+10000` 自动避让并打印实际地址；想彻底钉死就把端口写进
+`showcase/deploy/.env`（模板见 `.env.example`）。
+
+### 部署（与演示共用同一套服务定义）
+
+`demo.sh` 是「从源码起一套给人看」；`deploy/deploy.sh` 是「拉已发布镜像起一套可回滚的」。两者读同一组
+`deploy/compose*.yml`，差别只有一处：**部署链路永远不带 `compose.build.yml`**。
+
+```bash
+cp deploy/.env.example deploy/.env         # 首次：填 TAG / 口令
+./deploy/deploy.sh wsl up --tag v0.1.0     # 拉镜像 → 记 previous → 起栈 → 探活 → 写 .state/current
+./deploy/deploy.sh wsl status              # 容器状态 + 当前/上一版本 + 探活
+./deploy/deploy.sh wsl rollback            # 回到 .state/previous 那一版
+./deploy/deploy.sh wsl backup              # mysqldump + MinIO 打包（默认保留 7 份）
+./deploy/deploy.sh wsl down | logs
+```
+
+- 镜像 tag 不可变（`v0.1.0` / `sha-xxxxxxx`），**禁止用 `latest` 部署**：回滚就是把 previous 的 tag 重新拉起来；
+- `.state/current`、`.state/previous` 记录 tag 与镜像 digest，`data/`
+  与 `.env` 不随发布覆盖；
 
 不想用 Docker 时，手工启动（JDK 21 + Node ≥ 20）见 [`qd-appt-docs`](https://github.com/xcqj/qd-appt-docs) 的「启动与演示」。
 
