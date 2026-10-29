@@ -92,7 +92,7 @@ jobs:
     environment:
       name: wsl-demo
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: 同步 deploy/ 到部署目录（不覆盖 .env 与 .state）
         run: |
