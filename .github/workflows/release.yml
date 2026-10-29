@@ -61,13 +61,11 @@ jobs:
             *) echo "::error::tag 必须是 vX.Y.Z 或 sha-xxxxxxxx（拒绝 latest / 空值）"; exit 1 ;;
           esac
 
-      # 自托管机上已有 docker 登录（~/.docker/config.json），正常走不到这一步。
-      # 保留它是为了「仓将来换了 runner、又要读私有包」时有个开关：设仓库变量 GHCR_PRIVATE=true
-      # 并配 secret GHCR_READ_TOKEN（classic PAT，read:packages）即可。
-      # 把四枚包设为 public 之后，这里和下面都不再需要任何凭据。
-      - name: 登录 GHCR（仅换托管 runner 且私有包时需要）
-        if: ${{ vars.GHCR_PRIVATE == 'true' }}
-        run: echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      # 这里**不做 docker login**：凭据来自 runner 机器上的 ~/.docker/config.json
+      # （runner 服务以 user01 运行，HOME=/home/user01）；四枚包转 public 后则完全匿名。
+      # 教训：凭 vars.GHCR_PRIVATE 单开关去登录会误伤——变量设了而 secret 没配时，
+      # `echo "" | docker login` 直接报 "password is empty" 把预检打死。
+      # 将来真换回托管 runner 又要读私有包，必须双开关（变量 + secret 都判断）或改用 env 间接判断。
 
       - name: 四枚镜像必须都已推送
         run: |
@@ -80,7 +78,7 @@ jobs:
             fi
           done
           if [ -n "$missing" ]; then
-            echo "::error::缺少镜像：$missing —— 先在三仓打同一个 tag 并等 image*.yml 跑完"
+            echo "::error::缺少镜像：$missing —— 若不是「还没发布」，检查 runner 上 docker 凭据是否失效（~/.docker/config.json）或包仍是 private"
             exit 1
           fi
 
