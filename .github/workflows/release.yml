@@ -46,7 +46,12 @@ env:
 jobs:
   preflight:
     name: 预检（tag 形态 + 镜像是否已发布）
-    runs-on: ubuntu-latest
+    # 为什么预检也放在自托管而不是 ubuntu-latest：
+    #   四枚镜像由 backend / admin / app 三个仓发布，本仓的 GITHUB_TOKEN 读不到别的仓的私有包；
+    #   托管 runner 又没有 docker login 凭据 → `docker manifest inspect` 一律 401，预检必然误报。
+    #   自托管机上有 ~/.docker/config.json（或将来把包设为 public），两条路都能查通。
+    #   代价：预检也依赖 runner 在线——反正部署本来就依赖它，不额外增加故障面。
+    runs-on: [self-hosted, linux, x64, wsl]
     timeout-minutes: 10
     steps:
       - name: 校验 tag 形态
@@ -56,9 +61,11 @@ jobs:
             *) echo "::error::tag 必须是 vX.Y.Z 或 sha-xxxxxxxx（拒绝 latest / 空值）"; exit 1 ;;
           esac
 
-      # 私有包需要 read:packages 的 PAT：GITHUB_TOKEN 只能读「本仓发布」的包，
-      # 而四枚镜像分别是 backend / admin / app 三个仓发布的。包设为 public 后本步无需登录。
-      - name: 登录 GHCR（仅私有包需要）
+      # 自托管机上已有 docker 登录（~/.docker/config.json），正常走不到这一步。
+      # 保留它是为了「仓将来换了 runner、又要读私有包」时有个开关：设仓库变量 GHCR_PRIVATE=true
+      # 并配 secret GHCR_READ_TOKEN（classic PAT，read:packages）即可。
+      # 把四枚包设为 public 之后，这里和下面都不再需要任何凭据。
+      - name: 登录 GHCR（仅换托管 runner 且私有包时需要）
         if: ${{ vars.GHCR_PRIVATE == 'true' }}
         run: echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
