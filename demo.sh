@@ -357,7 +357,8 @@ EOF
 
 cmd_down() {
   "${COMPOSE[@]}" down
-  ok "已停止容器（数据保留在 $DATA_DIR）"
+  # 数据目录以 APPT_DATA_DIR 为准（部署机把它设成绝对路径）；未设置时才回落到脚本内的 showcase/data
+  ok "已停止容器（数据目录：$(env_get APPT_DATA_DIR "$DATA_DIR")）"
 }
 
 cmd_reset() {
