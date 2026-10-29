@@ -208,6 +208,14 @@ cmd_up() {
 
   export APPT_TAG="$tag"
 
+  # 数据目录守卫：已有部署记录、目录里却没有 mysql 数据 → 说明 APPT_DATA_DIR 被改过或换了机器。
+  # 空库起来后 api 会因缺表 crash loop（2026-10-30 实测：从 ~/qd-appt-deploy 起栈时
+  # `../data` 解析成了 ~/data，白白初始化出一个空库）。宁可停下来问人，也不要静默换库。
+  if [ -f "$CURRENT" ] && [ ! -d "$DATA_DIR/mysql" ]; then
+    die "数据目录不对：$DATA_DIR/mysql 不存在（APPT_DATA_DIR=${DATA_DIR_RAW}）。
+     已存在部署记录却没有数据，拒绝启动空库。确认 APPT_DATA_DIR 指向真实数据后再试。"
+  fi
+
   if [ "$NO_PULL" = "1" ]; then
     warn "--no-pull：使用本地已有镜像（离线演练）"
   else

@@ -88,8 +88,11 @@ cp deploy/.env.example deploy/.env         # 首次：填 TAG / 口令
 ```
 
 - 镜像 tag 不可变（`v0.1.0` / `sha-xxxxxxx`），**禁止用 `latest` 部署**：回滚就是把 previous 的 tag 重新拉起来；
-- `.state/current`、`.state/previous` 记录 tag 与镜像 digest，`data/`
-  与 `.env` 不随发布覆盖；
+- `.state/current`、`.state/previous` 记录 tag 与镜像 digest；
+- **目录约定（重要）**：`showcase/deploy/` 只放源码；真正的运行目录是 `~/qd-appt-deploy/`
+  （由 CI 用 `rsync` 同步源码，但**不覆盖** `.env` 与 `.state`）。数据目录用**绝对路径**写进 `.env`
+  （`APPT_DATA_DIR`），因为 `demo.sh` 与 `deploy.sh` 共用同一套栈——相对路径会各自解析到不同位置，
+  起出一个空库，api 直接缺表起不来；
 
 不想用 Docker 时，手工启动（JDK 21 + Node ≥ 20）见 [`qd-appt-docs`](https://github.com/xcqj/qd-appt-docs) 的「启动与演示」。
 
