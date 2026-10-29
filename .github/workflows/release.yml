@@ -1,0 +1,115 @@
+# 号源 QueueDepth · 发布（S16.1）
+#
+# 唯一入口：workflow_dispatch。**tag push 只产镜像，绝不部署** —— 部署会重启线上服务，
+# 必须由人显式点一次（方案 §5.1 的纪律）。
+#
+# 目标选择唯一来源：inputs.deploy_target。本文件目前只开 wsl；cloud 分支等 S16.2
+# （服务器到位）再加，避免留一个必然失败的 job 制造噪音。
+#
+# 为什么是 self-hosted：GitHub 在 job 开始前就要选定 runner，要部署到本机 WSL
+# 就只能由 WSL 里的 runner 接单（标签 wsl）。runner 掉了 job 会排队 24h 才失败，
+# 所以先看 Settings → Actions → Runners 是否 online，别盲点。
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: '部署目标'
+        type: choice
+        options: [wsl]
+        required: true
+        default: wsl
+      tag:
+        description: '发布标识（形如 v0.1.0；禁止 latest）'
+        type: string
+        required: true
+      skip_pull:
+        description: '不拉镜像，用本机已有镜像（离线演练）'
+        type: boolean
+        default: false
+
+# 同一目标不并发：避免两个发布互相覆盖 .state/previous
+concurrency:
+  group: release-${{ inputs.deploy_target }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  TAG: ${{ inputs.tag }}
+  REGISTRY: ghcr.io/xcqj
+  DEPLOY_DIR: ${{ github.workspace }}/deploy
+
+jobs:
+  preflight:
+    name: 预检（tag 形态 + 镜像是否已发布）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 校验 tag 形态
+        run: |
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*|sha-*) : ;;
+            *) echo "::error::tag 必须是 vX.Y.Z 或 sha-xxxxxxxx（拒绝 latest / 空值）"; exit 1 ;;
+          esac
+
+      # 私有包需要 read:packages 的 PAT：GITHUB_TOKEN 只能读「本仓发布」的包，
+      # 而四枚镜像分别是 backend / admin / app 三个仓发布的。包设为 public 后本步无需登录。
+      - name: 登录 GHCR（仅私有包需要）
+        if: ${{ vars.GHCR_PRIVATE == 'true' }}
+        run: echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: 四枚镜像必须都已推送
+        run: |
+          missing=""
+          for n in appt-api appt-snailjob appt-admin appt-h5; do
+            if docker manifest inspect "$REGISTRY/$n:$TAG" >/dev/null 2>&1; then
+              echo "  ✓ $REGISTRY/$n:$TAG"
+            else
+              echo "  ✗ $REGISTRY/$n:$TAG"; missing="$missing $n"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::缺少镜像：$missing —— 先在三仓打同一个 tag 并等 image*.yml 跑完"
+            exit 1
+          fi
+
+  deploy-wsl:
+    name: 部署到 WSL（self-hosted）
+    needs: preflight
+    if: inputs.deploy_target == 'wsl'
+    runs-on: [self-hosted, linux, x64, wsl]
+    timeout-minutes: 30
+    # 私有仓 + Free 计划下保护规则不生效，这里只作为将来（仓库转 public）的挂点
+    environment:
+      name: wsl-demo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 同步 deploy/ 到部署目录（不覆盖 .env 与 .state）
+        run: |
+          mkdir -p "$HOME/qd-appt-deploy"
+          rsync -a --delete \
+            --exclude '.env' --exclude '.env.wsl' --exclude '.env.cloud' \
+            --exclude '.state' --exclude 'data' \
+            deploy/ "$HOME/qd-appt-deploy/"
+
+      - name: 检查部署配置存在
+        run: |
+          if [ ! -f "$HOME/qd-appt-deploy/.env" ]; then
+            echo "::error::部署机缺少 ~/qd-appt-deploy/.env（从 .env.example 复制并填 TAG/口令）"
+            exit 1
+          fi
+
+      - name: 执行部署（与本地手工同一条命令）
+        run: |
+          cd "$HOME/qd-appt-deploy"
+          chmod +x deploy.sh
+          ./deploy.sh wsl up --tag "$TAG" ${{ inputs.skip_pull && '--no-pull' || '' }}
+
+      - name: 部署后状态
+        if: always()
+        run: cd "$HOME/qd-appt-deploy" && ./deploy.sh wsl status || true
