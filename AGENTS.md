@@ -10,8 +10,11 @@
 - `assets/screenshots/*.png`：**脚本产出**的关键页截图，不允许手工截图。
 - `assets/demo.gif`：脚本录制的 15 秒主流程。
 - `tools/screenshots/`：Playwright 脚本（自带 `package.json`，不污染其它四个仓的依赖树）。
-- `demo.sh` + `deploy/docker-compose.yml`（S14）：一键起全栈的入口。依赖定义 `include` 自 `../backend/deploy`，
-  本仓只补 api/admin/h5 三个服务；运行时数据落 `data/`（已忽略），端口与镜像 tag 走 `deploy/.env`。
+- `demo.sh`（S14）+ `deploy/`（S16.1）：一键起全栈 / 部署的统一入口。编排拆成五件套，
+  `compose.yml`（四个应用，纯镜像）+ `compose.deps.yml`（MySQL/Redis/MinIO，快照自 `../backend/deploy`）
+  + `compose.wsl.yml` / `compose.cloud.yml`（目标差异：端口与暴露面）+ `compose.build.yml`（仅本地构建）。
+  **部署机只 clone 本仓**（不带 build 那份、不需要兄弟目录）；运行时数据落 `data/`（已忽略），
+  端口 / 镜像 tag / 口令走 `deploy/.env`。
 
 ## 2. 截图脚本纪律（硬约束）
 
@@ -55,7 +58,11 @@ cd tools/screenshots && node run.mjs --all     # 产物齐全且可重复执行
 
 ```bash
 cd showcase
-bash -n demo.sh && docker compose -f deploy/docker-compose.yml config >/dev/null
+bash -n demo.sh && bash -n deploy/deploy.sh
+# 三种组合都必须能渲染，且 wsl/cloud 两套的配置里不能出现 build:
+APPT_TAG=v0.1.0 docker compose -f deploy/compose.yml -f deploy/compose.deps.yml -f deploy/compose.wsl.yml config >/dev/null
+APPT_TAG=v0.1.0 docker compose -f deploy/compose.yml -f deploy/compose.deps.yml -f deploy/compose.cloud.yml config >/dev/null
+APPT_TAG=v0.1.0 docker compose -f deploy/compose.yml -f deploy/compose.deps.yml -f deploy/compose.wsl.yml -f deploy/compose.build.yml config | grep -q 'build:'   # demo 才带 build
 ```
 
 提交前自查：`git status --short` 无 `node_modules`、`.out`、`*.webm`；产物阈值达标；README 引用的图片文件都存在。

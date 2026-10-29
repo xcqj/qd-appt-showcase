@@ -1,0 +1,40 @@
+# 号源 QueueDepth · cloud 目标覆盖（S16.2 验收前不启用）
+#
+# 结构先立住，保证 wsl ↔ cloud 只换 -f 与 .env，服务定义一个字不改。
+# 与 wsl 的差异：
+#   ① 依赖端口**一律不发布**（只走 Docker 内网，排障用 `docker compose exec` 或 ssh -L）
+#   ② api 不直接对外（只经 admin/h5 的 nginx 反代）
+#   ③ 给资源上限（云主机内存小，OOM 时先杀容器而不是宿主）
+#
+# ⚠️ 端口合并语义：compose 多个 -f 叠加时 ports 是**追加**而不是替换，
+#    因此 cloud 目标只能和 compose.yml + compose.deps.yml 一起用，**不要同时带 compose.wsl.yml**。
+
+services:
+  api:
+    # 不发布端口：浏览器只跟 admin / h5 的 nginx 打交道
+    mem_limit: 1024m
+
+  admin:
+    ports:
+      - "${APPT_ADMIN_PORT:-80}:80"
+    mem_limit: 128m
+
+  h5:
+    ports:
+      - "${APPT_H5_PORT:-8080}:80"
+    mem_limit: 128m
+
+  snailjob:
+    # 控制台仅供运维，绑回环；需要时 ssh -L 转发
+    ports:
+      - "127.0.0.1:${APPT_SNAILJOB_PORT:-18800}:8800"
+    mem_limit: 768m
+
+  mysql:
+    mem_limit: 1024m
+
+  redis:
+    mem_limit: 256m
+
+  minio:
+    mem_limit: 512m

@@ -1,48 +1,31 @@
-# 号源 QueueDepth · 演示编排（S14）
+# 号源 QueueDepth · 演示/部署编排 · 应用层（S16.1）
 #
-# 一条命令起全栈：依赖（MySQL / Redis / MinIO）复用 backend/deploy 的同一份定义，
-# 本文件只补 api / admin / h5 三个应用与一次性的 minio-init。
+# 本文件只描述「四个应用是什么」：镜像、环境变量、依赖顺序、健康检查。
+# 三类差异全部外置，靠 -f 叠加（后者覆盖前者）：
 #
-# 用法（推荐从 showcase 根目录跑脚本）：
-#   ./demo.sh                 # 起依赖 → 建库导数据 → 起三端 → 健康检查
-#   docker compose -f deploy/docker-compose.yml up -d      # 等价的手工入口（不含建库）
+#   compose.deps.yml   MySQL / Redis / MinIO
+#   compose.wsl.yml    wsl 目标：宿主端口 18082/18083/18084，依赖只绑 127.0.0.1
+#   compose.cloud.yml  cloud 目标（S16.2 验收前不启用）：依赖不发布端口 + 资源上限
+#   compose.build.yml  仅本地：四个 build: 段（部署机不 clone 源码，永远不带它）
 #
-# 端口与镜像 tag 都在 deploy/.env 里改（见 deploy/.env.example），不写死在脚本里。
+# 标准调用（deploy.sh / demo.sh 内部都这么拼）：
+#   docker compose -f compose.yml -f compose.deps.yml -f compose.wsl.yml up -d --wait
 #
-# 注意：include 需要 Compose >= 2.20；依赖服务的相对卷路径按被 include 文件所在目录解析，
-#       数据仍落在 backend/deploy/data（与开发机共用，换机器才会清空）。
+# 项目名**不写在这里**：由脚本注入 COMPOSE_PROJECT_NAME（qd-appt-demo / qd-appt-prod），
+# 否则两个目标会互相 down 掉对方的容器。容器名前缀用 ${APPT_CONTAINER_PREFIX}，与项目名同步。
 
-name: qd-appt-demo
-
-include:
-  - path: ../../backend/deploy/docker-compose.yml
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
-  # 依赖服务的「只读覆盖」：只改容器名与数据目录，镜像/健康检查仍来自 backend/deploy（include 单源）。
-  # 目的：① 与开发机的 qd-appt-redis 等容器并存不冲突；② 演示数据独立，reset 时可安全清理。
-  mysql:
-    container_name: qd-appt-demo-mysql
-    volumes:
-      - ${APPT_DEMO_DATA:-../data}/mysql:/var/lib/mysql
-
-  redis:
-    container_name: qd-appt-demo-redis
-    volumes:
-      - ${APPT_DEMO_DATA:-../data}/redis:/data
-
-  minio:
-    container_name: qd-appt-demo-minio
-    volumes:
-      - ${APPT_DEMO_DATA:-../data}/minio:/data
-
   # SnailJob 服务端（S14 追加）：控制台 8800 / 客户端 gRPC 17888
-  # 与业务同库（sj_* 表 + 任务种子由 init-db.sh --full 导入）
+  # 与业务同库：sj_* 表与任务种子由 init-db.sh --full 导入
   snailjob:
-    image: ghcr.io/xcqj/appt-snailjob:${APPT_TAG:-latest}
-    container_name: qd-appt-demo-snailjob
-    build:
-      context: ../../backend
-      dockerfile: Dockerfile.snailjob
+    image: ${APPT_REGISTRY:-ghcr.io/xcqj}/appt-snailjob:${APPT_TAG:?APPT_TAG 必填，形如 v0.1.0}
+    container_name: ${APPT_CONTAINER_PREFIX:-qd-appt-demo}-snailjob
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -52,9 +35,6 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${APPT_DB_PASSWORD:-root}
       SNAIL_JOB_SERVER_PORT: "17888"
       APPT_TZ: Asia/Shanghai
-    ports:
-      - "${APPT_SNAILJOB_PORT:-18800}:8800"
-      - "${APPT_SNAILJOB_GRPC_PORT:-17888}:17888"
     depends_on:
       mysql:
         condition: service_healthy
@@ -64,12 +44,11 @@ services:
       timeout: 5s
       retries: 30
       start_period: 40s
+    logging: *logging
 
   api:
-    image: ghcr.io/xcqj/appt-api:${APPT_TAG:-latest}
-    container_name: qd-appt-demo-api
-    build:
-      context: ../../backend
+    image: ${APPT_REGISTRY:-ghcr.io/xcqj}/appt-api:${APPT_TAG}
+    container_name: ${APPT_CONTAINER_PREFIX:-qd-appt-demo}-api
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod,docker
@@ -82,13 +61,11 @@ services:
       APPT_REDIS_PORT: ${APPT_REDIS_PORT:-6379}
       APPT_REDIS_PASSWORD: ${APPT_REDIS_PASSWORD:-ruoyi123}
       APPT_REDIS_DATABASE: ${APPT_REDIS_DATABASE:-1}
-      # 定时任务执行器：连同网络的 snailjob 服务端（namespace=dev 对应种子里的两个任务）
+      # 定时任务执行器：连同网络的 snailjob 服务端（namespace=dev 对应种子里的任务）
       APPT_SNAILJOB_ENABLED: ${APPT_SNAILJOB_ENABLED:-true}
       APPT_SNAILJOB_SERVER_HOST: snailjob
       APPT_SNAILJOB_SERVER_PORT: "17888"
       APPT_SNAILJOB_NAMESPACE: ${APPT_SNAILJOB_NAMESPACE:-dev}
-    ports:
-      - "${APPT_API_PORT:-8082}:8082"
     depends_on:
       mysql:
         condition: service_healthy
@@ -103,22 +80,19 @@ services:
       timeout: 5s
       retries: 30
       start_period: 40s
+    logging: *logging
 
   admin:
-    image: ghcr.io/xcqj/appt-admin:${APPT_TAG:-latest}
-    container_name: qd-appt-demo-admin
-    build:
-      context: ../../admin
+    image: ${APPT_REGISTRY:-ghcr.io/xcqj}/appt-admin:${APPT_TAG}
+    container_name: ${APPT_CONTAINER_PREFIX:-qd-appt-demo}-admin
     restart: unless-stopped
     environment:
       APPT_API_UPSTREAM: http://api:8082
-      # 「运维对账 → 任务调度中心」iframe：指向 compose 内的 snailjob 服务（控制台 8800）
+      # 「运维对账 → 任务调度中心」iframe：指向 compose 内的 snailjob 控制台
       APPT_SNAILJOB_UPSTREAM: ${APPT_SNAILJOB_UPSTREAM:-http://snailjob:8800}
     extra_hosts:
       # 备选：想改看宿主机上的 SnailJob 时，把 APPT_SNAILJOB_UPSTREAM 指到 host.docker.internal:8800
       - "host.docker.internal:host-gateway"
-    ports:
-      - "${APPT_ADMIN_PORT:-8083}:80"
     depends_on:
       api:
         condition: service_healthy
@@ -128,17 +102,14 @@ services:
       timeout: 3s
       retries: 12
       start_period: 5s
+    logging: *logging
 
   h5:
-    image: ghcr.io/xcqj/appt-h5:${APPT_TAG:-latest}
-    container_name: qd-appt-demo-h5
-    build:
-      context: ../../app
+    image: ${APPT_REGISTRY:-ghcr.io/xcqj}/appt-h5:${APPT_TAG}
+    container_name: ${APPT_CONTAINER_PREFIX:-qd-appt-demo}-h5
     restart: unless-stopped
     environment:
       APPT_API_UPSTREAM: http://api:8082
-    ports:
-      - "${APPT_H5_PORT:-8084}:80"
     depends_on:
       api:
         condition: service_healthy
@@ -148,6 +119,7 @@ services:
       timeout: 3s
       retries: 12
       start_period: 5s
+    logging: *logging
 
-# bucket 初始化不单列服务：minio 镜像自带 mc，demo.sh 直接 `exec` 进容器执行，
+# bucket 初始化不单列服务：minio 镜像自带 mc，脚本直接 `exec` 进容器执行，
 # 省掉一次额外的镜像拉取（minio/mc 在部分镜像源不可用）。

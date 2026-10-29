@@ -1,0 +1,26 @@
+# 号源 QueueDepth · 本地构建覆盖（S16.1）
+#
+# **只有 demo.sh 会带上本文件**：从源码构建四枚镜像，供「本机没有 registry 也能演示」。
+# deploy.sh / release.yml 永远不带它 —— 部署机的镜像只能从 GHCR 拉，
+# 这是「构建一次、多处部署」的物理保证（方案 §3.1 原则 1）。
+#
+# build context 相对本文件所在目录（showcase/deploy）解析：
+#   ../../backend = qd-appt/backend、../../admin = qd-appt/admin、../../app = qd-appt/app
+
+services:
+  api:
+    build:
+      context: ../../backend
+
+  snailjob:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.snailjob
+
+  admin:
+    build:
+      context: ../../admin
+
+  h5:
+    build:
+      context: ../../app

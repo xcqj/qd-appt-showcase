@@ -1,0 +1,66 @@
+# 号源 QueueDepth · 演示/部署编排 · 依赖层（S16.1）
+#
+# ⚠️ 本文件是 `backend/deploy/docker-compose.yml` 的**依赖服务快照**（2026-10-29）。
+#    那边继续服务 IDE 开发（含它自己的 ports 与 data 目录）；这里供「部署机只 clone showcase」使用，
+#    因此不能靠 include 复用 —— 跨仓相对路径在部署机上不存在。
+#    改依赖版本 / command / healthcheck 时**两边一起改**，否则开发与演示会漂。
+#
+# 与 backend 那份的两处刻意为差异：
+#   ① 不带 ports（端口归 compose.wsl.yml / compose.cloud.yml 管）
+#   ② 卷走 ${APPT_DATA_DIR}（部署目录自持，不落到源码仓）
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  mysql:
+    image: mysql:8.4.9
+    container_name: ${APPT_CONTAINER_PREFIX:-qd-appt-demo}-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${APPT_DB_PASSWORD:-root}
+      MYSQL_DATABASE: appt
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+08:00
+    volumes:
+      # 相对路径按本文件所在目录（showcase/deploy）解析 → 默认落在 showcase/data
+      - ${APPT_DATA_DIR:-../data}/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${APPT_DB_PASSWORD:-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    logging: *logging
+
+  redis:
+    image: redis:8.6.3
+    container_name: ${APPT_CONTAINER_PREFIX:-qd-appt-demo}-redis
+    restart: unless-stopped
+    # appendonly：号源序列 / 占位缓存重启后不能回退（2026-10-23 教训）
+    command: ["redis-server", "--requirepass", "${APPT_REDIS_PASSWORD:-ruoyi123}", "--appendonly", "yes"]
+    volumes:
+      - ${APPT_DATA_DIR:-../data}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${APPT_REDIS_PASSWORD:-ruoyi123}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    logging: *logging
+
+  minio:
+    image: pgsty/minio:RELEASE.2026-04-17T00-00-00Z
+    container_name: ${APPT_CONTAINER_PREFIX:-qd-appt-demo}-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${APPT_MINIO_USER:-ruoyi}
+      MINIO_ROOT_PASSWORD: ${APPT_MINIO_PASSWORD:-ruoyi123}
+    volumes:
+      - ${APPT_DATA_DIR:-../data}/minio:/data
+    logging: *logging

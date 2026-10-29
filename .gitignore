@@ -8,6 +8,12 @@ tools/screenshots/**/.tmp/
 data/
 deploy/.env
 
+# 部署产物（S16.1）：备份归档、版本状态与目标环境文件
+backup/
+deploy/.state/
+deploy/.env.wsl
+deploy/.env.cloud
+
 # 系统与编辑器
 .DS_Store
 Thumbs.db

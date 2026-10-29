@@ -1,0 +1,40 @@
+# 号源 QueueDepth · wsl 目标覆盖（S16.1）
+#
+# 为什么端口写死而不再靠 demo.sh 自动避让：
+#   Cloudflare Named Tunnel 指向 localhost:18083 / 18084，端口一漂公网演示立刻断。
+#   演示态固定 18xxx，与开发态 8xxx 永不重叠（方案 §7.6）。
+#
+# 依赖端口只绑 127.0.0.1：
+#   Windows 侧仍能用 localhost:13307 之类连（WSL2 有端口转发），但局域网/公网进不来。
+
+services:
+  api:
+    ports:
+      - "${APPT_API_PORT:-18082}:8082"
+
+  admin:
+    ports:
+      - "${APPT_ADMIN_PORT:-18083}:80"
+
+  h5:
+    ports:
+      - "${APPT_H5_PORT:-18084}:80"
+
+  snailjob:
+    ports:
+      # 控制台容器内 8800 / gRPC 17888；宿主避开开发机常用的 17888
+      - "${APPT_SNAILJOB_PORT:-18800}:8800"
+      - "${APPT_SNAILJOB_GRPC_PORT:-27888}:17888"
+
+  mysql:
+    ports:
+      - "127.0.0.1:${APPT_MYSQL_PORT:-3307}:3306"
+
+  redis:
+    ports:
+      - "127.0.0.1:${APPT_REDIS_PUBLISH_PORT:-6380}:6379"
+
+  minio:
+    ports:
+      - "127.0.0.1:${APPT_MINIO_PORT:-9010}:9000"
+      - "127.0.0.1:${APPT_MINIO_CONSOLE_PORT:-9011}:9001"

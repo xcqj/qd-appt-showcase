@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 号源 QueueDepth · 一键演示（S14）
+# 号源 QueueDepth · 一键演示（S14；S16.1 改为复用五件套编排）
 #
 # 前提：本机只装 Docker（含 compose v2.20+），五个仓同级 clone：
 #   qd-appt/{backend,admin,app,docs,showcase}
@@ -7,11 +7,14 @@
 # 做的事（每步都有健康检查与失败提示）：
 #   ① 检查 Docker / compose / 仓库布局 / 端口占用
 #   ② 准备镜像：先尝试 ghcr，拉不到则本地构建（构建放在起依赖之前，避免数据卷属主阻断 build context）
-#   ③ 起依赖：MySQL 3307 · Redis 6380 · MinIO 9010-9011（复用 backend/deploy 的 compose）
+#   ③ 起依赖：MySQL 3307 · Redis 6380 · MinIO 9010-9011（deploy/compose.deps.yml，依赖只绑 127.0.0.1）
 #   ④ 建库 + 全量导入演示数据（backend/deploy/init-db.sh --full，含 SnailJob 表与任务种子）
 #   ⑤ 建 MinIO bucket（失败只告警：封面/头像是外链占位图）
 #   ⑥ 起 SnailJob 服务端（必须排在建库之后：它启动即查 sj_* 表）
 #   ⑦ 起三端并逐端探活，打印访问地址与演示账号
+#
+# 编排（S16.1 起拆成五件套，本脚本带前四份；部署走 deploy/deploy.sh，**不带** build 那份）：
+#   compose.yml + compose.deps.yml + compose.wsl.yml + compose.build.yml
 #
 # 用法：
 #   ./demo.sh              # 起全栈（默认）
@@ -21,20 +24,30 @@
 #   ./demo.sh --help
 #
 # 可调参数：deploy/.env（从 deploy/.env.example 复制），或同名环境变量。
+# --- demo.sh 头部说明到此（usage 依赖此行，勿删，也勿在其上方插入非注释行）
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(cd "$ROOT_DIR/.." && pwd)"
 DEPLOY_DIR="$ROOT_DIR/deploy"
-COMPOSE_FILE="$DEPLOY_DIR/docker-compose.yml"
+COMPOSE_BASE="$DEPLOY_DIR/compose.yml"
+COMPOSE_DEPS="$DEPLOY_DIR/compose.deps.yml"
+COMPOSE_TARGET="$DEPLOY_DIR/compose.wsl.yml"
+COMPOSE_BUILD="$DEPLOY_DIR/compose.build.yml"
 ENV_FILE="$DEPLOY_DIR/.env"
 INIT_DB="$PARENT_DIR/backend/deploy/init-db.sh"
 DATA_DIR="$ROOT_DIR/data"                                  # demo 数据卷（与开发机的 backend/deploy/data 隔离）
 BUILD_CONTEXT_DATA="$PARENT_DIR/backend/deploy/data"       # 开发机既有数据卷：构建上下文会遍历到
 SQL_DIR="$PARENT_DIR/backend/script/sql"
-COMPOSE=(docker compose -f "$COMPOSE_FILE")
+COMPOSE=(docker compose -f "$COMPOSE_BASE" -f "$COMPOSE_DEPS" -f "$COMPOSE_TARGET")
+# 给 init-db.sh 用：它按冒号分隔解析多份编排（单路径仍兼容）
+COMPOSE_FILES_SERIAL="$COMPOSE_BASE:$COMPOSE_DEPS:$COMPOSE_TARGET"
+# 报错提示里可直接复制的命令前缀（提示要能"复制就跑"，因此带 cd）
+COMPOSE_HINT="cd $DEPLOY_DIR && docker compose -f compose.yml -f compose.deps.yml -f compose.wsl.yml"
 
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-qd-appt-demo}"
+# 容器名前缀必须跟项目名一致：否则同名容器会跨项目相撞（compose 的 container_name 是全局的）
+export APPT_CONTAINER_PREFIX="${APPT_CONTAINER_PREFIX:-$COMPOSE_PROJECT_NAME}"
 
 C_CYAN='\033[36m'; C_RED='\033[31m'; C_GREEN='\033[32m'; C_YELLOW='\033[33m'; C_RESET='\033[0m'
 CURRENT_STEP="初始化"
@@ -46,7 +59,7 @@ warn() { printf "${C_YELLOW}  ! %s${C_RESET}\n" "$*"; }
 die()  {
   printf "\n${C_RED}✗ %s${C_RESET}\n" "$*" >&2
   [ -n "$FIX_HINT" ] && printf "  修复：%s\n" "$FIX_HINT" >&2
-  printf "  查看日志：docker compose -f %s logs --tail=80\n" "$COMPOSE_FILE" >&2
+  printf "  查看日志：%s logs --tail=80\n" "$COMPOSE_HINT" >&2
   exit 1
 }
 
@@ -55,13 +68,14 @@ on_error() {
   trap - ERR
   printf "\n${C_RED}✗ 失败于步骤「%s」（退出码 %s）${C_RESET}\n" "$CURRENT_STEP" "$code" >&2
   [ -n "$FIX_HINT" ] && printf "  修复：%s\n" "$FIX_HINT" >&2
-  printf "  查看日志：docker compose -f %s logs --tail=80\n" "$COMPOSE_FILE" >&2
+  printf "  查看日志：%s logs --tail=80\n" "$COMPOSE_HINT" >&2
   exit "$code"
 }
 trap on_error ERR
 
 usage() {
-  sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
+  # 以头部哨兵注释为界，避免以后加删注释行导致行号错位
+  sed -n "2,/^# --- demo.sh 头部说明到此/{/^# --- demo.sh 头部说明到此/d;s/^# \{0,1\}//;p;}" "$0"
 }
 
 # 从 deploy/.env 读一个键（不 source，避免 URL 里的 & 被 shell 解释）
@@ -157,7 +171,7 @@ wait_http() {
     fi
     sleep 2
   done
-  FIX_HINT="docker compose -f $COMPOSE_FILE logs --tail=120"
+  FIX_HINT="$COMPOSE_HINT logs --tail=120"
   die "$name 在 $((tries * 2))s 内未响应"
 }
 
@@ -175,37 +189,38 @@ wait_api() {
     fi
     sleep 2
   done
-  FIX_HINT="docker compose -f $COMPOSE_FILE logs --tail=120 api"
+  FIX_HINT="$COMPOSE_HINT logs --tail=120 api"
   die "后端 120s 内未就绪"
 }
 
 image_exists() { docker image inspect "$1" >/dev/null 2>&1; }
 
 prepare_images() {
-  say "== ② 准备镜像（ghcr.io/xcqj/appt-*:${TAG}）=="
+  say "== ② 准备镜像（$REGISTRY/appt-*:${TAG}）=="
   local pull_ok=0
   if [ "$(env_get APPT_PULL 1)" = "1" ]; then
     if "${COMPOSE[@]}" pull api admin h5 snailjob; then
       pull_ok=1
-      ok "已拉取三个镜像"
+      ok "已拉取四个镜像"
     else
-      warn "ghcr 拉取失败（未发布 / 未登录 / 网络不通），改用本地构建"
+      warn "$REGISTRY 拉取失败（未发布 / 未登录 / 网络不通），改用本地构建"
     fi
   fi
   [ "$pull_ok" = "1" ] && return 0
 
-  if image_exists "ghcr.io/xcqj/appt-api:${TAG}" \
-    && image_exists "ghcr.io/xcqj/appt-admin:${TAG}" \
-    && image_exists "ghcr.io/xcqj/appt-h5:${TAG}" \
-    && image_exists "ghcr.io/xcqj/appt-snailjob:${TAG}"; then
-    ok "本地已有三个镜像（跳过构建）"
+  if image_exists "$REGISTRY/appt-api:${TAG}" \
+    && image_exists "$REGISTRY/appt-admin:${TAG}" \
+    && image_exists "$REGISTRY/appt-h5:${TAG}" \
+    && image_exists "$REGISTRY/appt-snailjob:${TAG}"; then
+    ok "本地已有四个镜像（跳过构建）"
     return 0
   fi
 
-  say "== ② 本地构建三个镜像（首次 5–15 分钟）=="
+  say "== ② 本地构建四个镜像（首次 5–15 分钟）=="
   ensure_build_context_readable
-  if ! "${COMPOSE[@]}" build api admin h5 snailjob; then
-    FIX_HINT="单看后端：docker compose -f $COMPOSE_FILE build api；若报 permission denied，先 rm -rf $DATA_DIR"
+  # build 段在 compose.build.yml：只有 demo 带它，部署链路不带
+  if ! "${COMPOSE[@]}" -f "$COMPOSE_BUILD" build api admin h5 snailjob; then
+    FIX_HINT="单看后端：cd $DEPLOY_DIR && docker compose -f compose.yml -f compose.deps.yml -f compose.wsl.yml -f compose.build.yml build api；若报 permission denied，先 rm -rf $DATA_DIR"
     die "镜像构建失败"
   fi
   ok "三个镜像构建完成"
@@ -228,15 +243,19 @@ cmd_up() {
     }
   done
   [ -f "$INIT_DB" ] || die "缺少 $INIT_DB（backend 仓不完整？）"
-  [ -f "$COMPOSE_FILE" ] || die "缺少 $COMPOSE_FILE"
+  for f in "$COMPOSE_BASE" "$COMPOSE_DEPS" "$COMPOSE_TARGET" "$COMPOSE_BUILD"; do
+    [ -f "$f" ] || die "缺少 $f（deploy 五件套未就位？）"
+  done
   ok "backend / admin / app 均在同级目录"
 
   CURRENT_STEP="分配端口"
   PORT_OFFSET="$(env_get APPT_PORT_OFFSET 10000)"
   case "$PORT_OFFSET" in ''|*[!0-9]*) PORT_OFFSET=10000 ;; esac
-  API_PORT="$(resolve_port "后端" "$(env_get APPT_API_PORT 8082)" APPT_API_PORT)"
-  ADMIN_PORT="$(resolve_port "管理后台" "$(env_get APPT_ADMIN_PORT 8083)" APPT_ADMIN_PORT)"
-  H5_PORT="$(resolve_port "H5" "$(env_get APPT_H5_PORT 8084)" APPT_H5_PORT)"
+  # 演示态固定 18xxx（与开发态 8xxx 分开，且与 Cloudflare 隧道指向的 18083/18084 对齐）
+  API_PORT="$(resolve_port "后端" "$(env_get APPT_API_PORT 18082)" APPT_API_PORT)"
+  ADMIN_PORT="$(resolve_port "管理后台" "$(env_get APPT_ADMIN_PORT 18083)" APPT_ADMIN_PORT)"
+  H5_PORT="$(resolve_port "H5" "$(env_get APPT_H5_PORT 18084)" APPT_H5_PORT)"
+  # MySQL 必须保持 3307：init-db.sh 以「端口==3307」判定走 compose 还是直连宿主机
   MYSQL_PORT="$(resolve_port "MySQL" "$(env_get APPT_MYSQL_PORT 3307)" APPT_MYSQL_PORT)"
   REDIS_PORT="$(resolve_port "Redis" "$(env_get APPT_REDIS_PUBLISH_PORT 6380)" APPT_REDIS_PUBLISH_PORT)"
   MINIO_PORT="$(resolve_port "MinIO" "$(env_get APPT_MINIO_PORT 9010)" APPT_MINIO_PORT)"
@@ -246,8 +265,10 @@ cmd_up() {
   SNAILJOB_GRPC_PORT="$(resolve_port "SnailJob gRPC" "$(env_get APPT_SNAILJOB_GRPC_PORT 27888)" APPT_SNAILJOB_GRPC_PORT)"
   PUBLIC_HOST="$(env_get APPT_PUBLIC_HOST localhost)"
   TAG="$(env_get APPT_TAG latest)"
+  REGISTRY="$(env_get APPT_REGISTRY ghcr.io/xcqj)"
 
   # 导出给 compose 插值：脚本读到的值与 compose 实际用的值必须一致
+  export APPT_REGISTRY="$REGISTRY"
   export APPT_API_PORT="$API_PORT" APPT_ADMIN_PORT="$ADMIN_PORT" APPT_H5_PORT="$H5_PORT"
   export APPT_MYSQL_PORT="$MYSQL_PORT" APPT_REDIS_PUBLISH_PORT="$REDIS_PORT"
   export APPT_MINIO_PORT="$MINIO_PORT" APPT_MINIO_CONSOLE_PORT="$MINIO_CONSOLE_PORT"
@@ -262,14 +283,14 @@ cmd_up() {
   CURRENT_STEP="启动依赖"
   say "== ③ 启动依赖（MySQL / Redis / MinIO）=="
   if ! "${COMPOSE[@]}" up -d --wait --wait-timeout 240 mysql redis minio; then
-    FIX_HINT="docker compose -f $COMPOSE_FILE logs --tail=80 mysql redis minio"
+    FIX_HINT="$COMPOSE_HINT logs --tail=80 mysql redis minio"
     die "依赖启动失败或健康检查超时"
   fi
   ok "MySQL / Redis / MinIO 均已健康"
 
   CURRENT_STEP="初始化数据库"
   say "== ④ 建库 + 导入演示数据（--full，首次约 30–60s）=="
-  COMPOSE_FILE="$COMPOSE_FILE" \
+  COMPOSE_FILE="$COMPOSE_FILES_SERIAL" \
   COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT_NAME" \
   SQL_DIR="$SQL_DIR" \
     bash "$INIT_DB" --full \
@@ -294,7 +315,7 @@ cmd_up() {
   # 必须排在建库之后：服务端启动即查 sj_* 表，先起会刷一堆 "table doesn't exist"
   say "== ⑥ 启动 SnailJob 服务端 =="
   if ! "${COMPOSE[@]}" up -d --wait --wait-timeout 240 snailjob; then
-    FIX_HINT="docker compose -f $COMPOSE_FILE logs --tail=80 snailjob"
+    FIX_HINT="$COMPOSE_HINT logs --tail=80 snailjob"
     die "SnailJob 启动失败或健康检查超时"
   fi
   ok "SnailJob 已健康（控制台容器内 8800 / gRPC 17888）"
@@ -302,7 +323,7 @@ cmd_up() {
   CURRENT_STEP="启动应用"
   say "== ⑦ 启动后端 / 管理后台 / H5 =="
   if ! "${COMPOSE[@]}" up -d --wait --wait-timeout 300 api admin h5; then
-    FIX_HINT="docker compose -f $COMPOSE_FILE logs --tail=120 api admin h5"
+    FIX_HINT="$COMPOSE_HINT logs --tail=120 api admin h5"
     die "应用启动失败或健康检查超时"
   fi
 
