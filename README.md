@@ -137,7 +137,7 @@ cp deploy/.env.example deploy/.env         # 首次：填 TAG / 口令
 | `qd-appt-docs` | 文档单一权威（契约 / 设计 / 排期 / 证据） | `~/projects/qd-appt/docs` |
 | `qd-appt-showcase` | 本仓：门面、截图、截图脚本 | `~/projects/qd-appt/showcase` |
 
-> 本地路径按「四个仓平级 clone 到同一目录」书写，按你的实际放置调整即可。
+> 本地路径按「五个业务仓平级 clone 到同一目录」书写，按你的实际放置调整即可。
 
 ## 已知边界（如实说明）
 

@@ -1,6 +1,7 @@
 # AGENTS.md — qd-appt-showcase（门面与物料仓）
 
-> 这是**第 5 个仓**，与 `qd-appt-app` / `qd-appt-admin` / `qd-appt-backend` / `qd-appt-docs` 平级。
+> 这是**五个业务仓中的第 5 个**，与 `qd-appt-app` / `qd-appt-admin` / `qd-appt-backend` / `qd-appt-docs` 平级；
+> 另有一个项目总览仓 `qd-appt-overview`（不含业务代码），与之平级但不在本仓职责内。
 > 跨仓操作规范在 `../docs/AGENTS.md`（唯一权威）；红线在 `../docs/redlines.md`；排期与验收在 `../docs/ROADMAP.md`。
 > 父目录 `qd-appt/AGENTS.md` 是本地便签（不入库），不要把它复制进来。
 
